@@ -77,7 +77,7 @@ class FirebirdConnector extends Connector implements ConnectorInterface
     protected function configureConnection(PDO $connection, array $config): void
     {
         $connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $connection->setAttribute(PDO::ATTR_CASE, PDO::CASE_NATURAL);
+        $connection->setAttribute(PDO::ATTR_CASE, PDO::CASE_LOWER);
         $connection->setAttribute(PDO::ATTR_ORACLE_NULLS, PDO::NULL_NATURAL);
 
         if (! empty($config['isolation_level'])) {
@@ -85,5 +85,6 @@ class FirebirdConnector extends Connector implements ConnectorInterface
         }
     }
 }
+
 
 

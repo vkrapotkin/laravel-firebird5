@@ -6,10 +6,13 @@
     "homepage": "https://github.com/vkrapotkin/laravel-firebird5",
     "keywords": [
         "laravel",
+        "laravel 13",
         "firebird",
         "firebirdsql",
+        "firebird 5",
         "database",
         "pdo",
+        "pdo-firebird",
         "laravel-driver"
     ],
     "authors": [
@@ -25,12 +28,16 @@
     "require": {
         "php": "^8.3",
         "ext-pdo": "*",
+        "ext-pdo_firebird": "*",
         "illuminate/database": "^13.0",
         "illuminate/support": "^13.0"
     },
     "require-dev": {
         "orchestra/testbench": "^11.0",
         "phpunit/phpunit": "^12.0"
+    },
+    "suggest": {
+        "ext-pdo_firebird": "Required to use the Firebird connection driver and run integration tests."
     },
     "autoload": {
         "psr-4": {
@@ -50,8 +57,12 @@
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": [
+            "@test:unit",
+            "@test:integration"
+        ],
+        "test:unit": "phpunit --testsuite Unit",
+        "test:integration": "phpunit --testsuite Integration --display-warnings"
     },
-    "minimum-stability": "dev",
     "prefer-stable": true
 }

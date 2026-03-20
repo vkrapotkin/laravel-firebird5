@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Vkrapotkin\LaravelFirebird5\Schema\Grammars;
 
-use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Grammars\Grammar;
 use Illuminate\Support\Fluent;
@@ -12,30 +11,58 @@ use RuntimeException;
 
 class FirebirdGrammar extends Grammar
 {
-    protected $modifiers = ['Nullable', 'Default', 'Increment'];
+    protected $modifiers = ['Default', 'Increment', 'Nullable'];
 
     protected $serials = ['bigInteger', 'integer', 'mediumInteger', 'smallInteger', 'tinyInteger'];
 
-    protected $transactions = true;
+    protected $transactions = false;
+
+    public function compileSchemas(): string
+    {
+        return "select current_user as name, cast(null as varchar(255)) as path, 1 as default from rdb\$database";
+    }
 
     public function compileTableExists($schema, $table): string
     {
-        return 'select 1 from rdb$relations where rdb$system_flag = 0 and rdb$view_blr is null and rdb$relation_name = ?';
+        return sprintf(
+            'select 1 from rdb$relations where coalesce(rdb$system_flag, 0) = 0 and rdb$view_blr is null and rdb$relation_name = %s',
+            $this->quoteString($table)
+        );
     }
 
     public function compileTables($schema): string
     {
-        return "select trim(r.rdb$relation_name) as name, cast(null as varchar(63)) as schema, trim(r.rdb$relation_name) as schema_qualified_name, cast(null as bigint) as size, trim(r.rdb$description) as comment, cast(null as varchar(63)) as collation, cast(null as varchar(63)) as engine from rdb$relations r where coalesce(r.rdb$system_flag, 0) = 0 and r.rdb$view_blr is null order by trim(r.rdb$relation_name)";
+        return <<<'SQL'
+select trim(r.rdb$relation_name) as name, cast(null as varchar(63)) as schema, trim(r.rdb$relation_name) as schema_qualified_name, cast(null as bigint) as size, trim(r.rdb$description) as comment, cast(null as varchar(63)) as collation, cast(null as varchar(63)) as engine from rdb$relations r where coalesce(r.rdb$system_flag, 0) = 0 and r.rdb$view_blr is null order by trim(r.rdb$relation_name)
+SQL;
     }
 
     public function compileViews($schema): string
     {
-        return "select trim(r.rdb$relation_name) as name, cast(null as varchar(63)) as schema, trim(r.rdb$relation_name) as schema_qualified_name, trim(r.rdb$view_source) as definition from rdb$relations r where coalesce(r.rdb$system_flag, 0) = 0 and r.rdb$view_blr is not null order by trim(r.rdb$relation_name)";
+        return <<<'SQL'
+select trim(r.rdb$relation_name) as name, cast(null as varchar(63)) as schema, trim(r.rdb$relation_name) as schema_qualified_name, trim(r.rdb$view_source) as definition from rdb$relations r where coalesce(r.rdb$system_flag, 0) = 0 and r.rdb$view_blr is not null order by trim(r.rdb$relation_name)
+SQL;
+    }
+
+    public function compileTypes($schema): string
+    {
+        return <<<'SQL'
+select
+    trim(f.rdb$field_name) as name,
+    cast(null as varchar(63)) as schema,
+    'domain' as type,
+    'U' as category,
+    0 as implicit
+from rdb$fields f
+where coalesce(f.rdb$system_flag, 0) = 0
+    and f.rdb$field_name not starting with 'RDB$'
+order by trim(f.rdb$field_name)
+SQL;
     }
 
     public function compileColumns($schema, $table): string
     {
-        return <<<'SQL'
+        return sprintf(<<<'SQL'
 select
     trim(rf.rdb$field_name) as name,
     case
@@ -91,14 +118,14 @@ select
     trim(f.rdb$computed_source) as generation_expression
 from rdb$relation_fields rf
 join rdb$fields f on f.rdb$field_name = rf.rdb$field_source
-where rf.rdb$relation_name = ?
+where rf.rdb$relation_name = %s
 order by rf.rdb$field_position
-SQL;
+SQL, $this->quoteString($table));
     }
 
     public function compileIndexes($schema, $table): string
     {
-        return <<<'SQL'
+        return sprintf(<<<'SQL'
 select
     trim(i.rdb$index_name) as name,
     trim(s.rdb$field_name) as column_name,
@@ -107,14 +134,14 @@ select
 from rdb$indices i
 join rdb$index_segments s on s.rdb$index_name = i.rdb$index_name
 left join rdb$relation_constraints rc on rc.rdb$index_name = i.rdb$index_name
-where i.rdb$relation_name = ? and coalesce(i.rdb$system_flag, 0) = 0
+where i.rdb$relation_name = %s and coalesce(i.rdb$system_flag, 0) = 0
 order by trim(i.rdb$index_name), s.rdb$field_position
-SQL;
+SQL, $this->quoteString($table));
     }
 
     public function compileForeignKeys($schema, $table): string
     {
-        return <<<'SQL'
+        return sprintf(<<<'SQL'
 select
     trim(rc.rdb$constraint_name) as name,
     trim(seg.rdb$field_name) as column_name,
@@ -128,12 +155,12 @@ join rdb$ref_constraints ref on ref.rdb$constraint_name = rc.rdb$constraint_name
 join rdb$index_segments seg on seg.rdb$index_name = rc.rdb$index_name
 join rdb$relation_constraints ref_rc on ref_rc.rdb$constraint_name = ref.rdb$const_name_uq
 join rdb$index_segments ref_seg on ref_seg.rdb$index_name = ref_rc.rdb$index_name and ref_seg.rdb$field_position = seg.rdb$field_position
-where rc.rdb$relation_name = ? and rc.rdb$constraint_type = 'FOREIGN KEY'
+where rc.rdb$relation_name = %s and rc.rdb$constraint_type = 'FOREIGN KEY'
 order by trim(rc.rdb$constraint_name), seg.rdb$field_position
-SQL;
+SQL, $this->quoteString($table));
     }
 
-    public function compileCreate(Blueprint $blueprint, Fluent $command, Connection $connection): string
+    public function compileCreate(Blueprint $blueprint, Fluent $command): string
     {
         $table = $this->wrapTable($blueprint);
         $columns = implode(', ', $this->getColumns($blueprint));
@@ -253,6 +280,22 @@ SQL;
     public function compileDropForeign(Blueprint $blueprint, Fluent $command): string
     {
         return 'alter table '.$this->wrapTable($blueprint).' drop constraint '.$this->wrap($command->index);
+    }
+
+    public function compileDropAllTables(array $tables): string
+    {
+        return implode('; ', array_map(
+            fn (string $table): string => 'drop table '.$this->wrapTable($table),
+            $tables
+        ));
+    }
+
+    public function compileDropAllViews(array $views): string
+    {
+        return implode('; ', array_map(
+            fn (string $view): string => 'drop view '.$this->wrapTable($view),
+            $views
+        ));
     }
 
     protected function typeBigInteger(Fluent $column): string
@@ -439,7 +482,7 @@ SQL;
 
     protected function modifyNullable(Blueprint $blueprint, Fluent $column): string
     {
-        return $column->nullable ? ' null' : ' not null';
+        return $column->nullable ? '' : ' not null';
     }
 
     protected function modifyDefault(Blueprint $blueprint, Fluent $column): string
@@ -453,11 +496,13 @@ SQL;
 
     protected function modifyIncrement(Blueprint $blueprint, Fluent $column): string
     {
-        if (! $column->autoIncrement) {
+        if (! in_array($column->type, $this->serials, true) || ! $column->autoIncrement) {
             return '';
         }
 
-        return ' generated by default as identity';
+        return $this->hasCommand($blueprint, 'primary') || ($column->change && ! $column->primary)
+            ? ' generated by default as identity'
+            : ' generated by default as identity primary key';
     }
 
     protected function getType(Fluent $column): string
@@ -471,5 +516,11 @@ SQL;
         return $this->{$method}($column);
     }
 }
+
+
+
+
+
+
 
 

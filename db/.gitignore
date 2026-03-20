@@ -1,0 +1,6 @@
+*.fdb
+*.FDB
+*.lck
+*.log
+*.tmp
+create_test_db.sql

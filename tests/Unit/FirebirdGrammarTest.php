@@ -43,6 +43,91 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+    public function test_it_compiles_union_queries_without_wrapping_each_branch(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+        $builder->from('users')->select(['id'])->where('id', 1);
+
+        $union = new Builder($connection, $grammar);
+        $union->from('users_archive')->select(['id'])->where('id', 2);
+
+        $builder->unionAll($union)->offset(1)->limit(1);
+
+        self::assertSame(
+            'select "id" from "users" where "id" = ? union all select "id" from "users_archive" where "id" = ? offset 1 rows fetch next 1 rows only',
+            $grammar->compileSelect($builder)
+        );
+    }
+
+    public function test_it_compiles_insert_using_statement(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+        $builder->from('users_archive');
+
+        self::assertSame(
+            'insert into "users_archive" ("id", "name") select "id", "name" from "users"',
+            $grammar->compileInsertUsing($builder, ['id', 'name'], 'select "id", "name" from "users"')
+        );
+    }
+
+    public function test_it_compiles_lock_for_update(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+
+        $builder->from('users')->select(['id'])->where('id', 1)->lockForUpdate();
+
+        self::assertSame(
+            'select "id" from "users" where "id" = ? for update with lock',
+            $grammar->compileSelect($builder)
+        );
+    }
+
+    public function test_it_compiles_shared_lock(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+
+        $builder->from('users')->select(['id'])->where('id', 1)->sharedLock();
+
+        self::assertSame(
+            'select "id" from "users" where "id" = ? with lock',
+            $grammar->compileSelect($builder)
+        );
+    }
+
+    public function test_it_rejects_insert_or_ignore(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('This database engine does not support inserting while ignoring errors.');
+
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+        $builder->from('users');
+
+        $grammar->compileInsertOrIgnore($builder, [['email' => 'a@example.com']]);
+    }
+
+    public function test_it_rejects_insert_or_ignore_using(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('This database engine does not support inserting while ignoring errors.');
+
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+        $builder->from('users_archive');
+
+        $grammar->compileInsertOrIgnoreUsing($builder, ['id'], 'select "id" from "users"');
+    }
+
     public function test_it_compiles_upsert_for_single_row(): void
     {
         $connection = $this->makeConnection();
@@ -73,8 +158,48 @@ class FirebirdGrammarTest extends TestCase
         $grammar = new FirebirdSchemaGrammar($this->makeConnection());
 
         self::assertSame(
-            'select 1 from rdb$relations where rdb$system_flag = 0 and rdb$view_blr is null and rdb$relation_name = ?',
+            "select 1 from rdb\$relations where coalesce(rdb\$system_flag, 0) = 0 and rdb\$view_blr is null and rdb\$relation_name = 'USERS'",
             $grammar->compileTableExists(null, 'USERS')
+        );
+    }
+
+    public function test_it_compiles_schemas_query(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertSame(
+            "select current_user as name, cast(null as varchar(255)) as path, 1 as default from rdb\$database",
+            $grammar->compileSchemas()
+        );
+    }
+
+    public function test_it_compiles_columns_query_with_inlined_table_name(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertStringContainsString(
+            "where rf.rdb\$relation_name = 'USERS'",
+            $grammar->compileColumns(null, 'USERS')
+        );
+    }
+
+    public function test_it_compiles_indexes_query_with_inlined_table_name(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertStringContainsString(
+            "where i.rdb\$relation_name = 'USERS' and",
+            $grammar->compileIndexes(null, 'USERS')
+        );
+    }
+
+    public function test_it_compiles_foreign_keys_query_with_inlined_table_name(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertStringContainsString(
+            "where rc.rdb\$relation_name = 'POSTS' and rc.rdb\$constraint_type = 'FOREIGN KEY'",
+            $grammar->compileForeignKeys(null, 'POSTS')
         );
     }
 
@@ -128,6 +253,40 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+
+    public function test_it_compiles_drop_primary_statement(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdSchemaGrammar($connection);
+        $blueprint = new Blueprint($connection, 'posts');
+        $command = new Fluent(['index' => 'posts_pkey']);
+
+        self::assertSame(
+            'alter table "posts" drop constraint "posts_pkey"',
+            $grammar->compileDropPrimary($blueprint, $command)
+        );
+    }
+
+    public function test_it_compiles_drop_all_tables_statement(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertSame(
+            'drop table "users"; drop table "posts"',
+            $grammar->compileDropAllTables(['users', 'posts'])
+        );
+    }
+
+    public function test_it_compiles_drop_all_views_statement(): void
+    {
+        $grammar = new FirebirdSchemaGrammar($this->makeConnection());
+
+        self::assertSame(
+            'drop view "active_users"; drop view "recent_posts"',
+            $grammar->compileDropAllViews(['active_users', 'recent_posts'])
+        );
+    }
+
     private function makeConnection(): FirebirdConnection
     {
         return new class extends FirebirdConnection {
@@ -140,5 +299,9 @@ class FirebirdGrammarTest extends TestCase
         };
     }
 }
+
+
+
+
 
 

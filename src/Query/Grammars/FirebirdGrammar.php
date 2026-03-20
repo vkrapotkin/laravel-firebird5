@@ -6,7 +6,7 @@ namespace Vkrapotkin\LaravelFirebird5\Query\Grammars;
 
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Grammars\Grammar;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Arr;
 use RuntimeException;
 
 class FirebirdGrammar extends Grammar
@@ -31,7 +31,7 @@ class FirebirdGrammar extends Grammar
         $sql .= $this->compilePaginationClause($query->limit, $query->offset);
 
         if ($query->unions) {
-            $sql = $this->wrapUnion($sql).' '.$this->compileUnions($query);
+            $sql .= ' '.$this->compileUnions($query);
         }
 
         $query->columns = $original;
@@ -77,6 +77,13 @@ class FirebirdGrammar extends Grammar
         return ltrim($sql);
     }
 
+    protected function compileUnion(array $union): string
+    {
+        $conjunction = $union['all'] ? ' union all ' : ' union ';
+
+        return $conjunction.$union['query']->toSql();
+    }
+
     public function compileInsertGetId(Builder $query, $values, $sequence): string
     {
         $sql = $this->compileInsert($query, $values);
@@ -113,14 +120,24 @@ class FirebirdGrammar extends Grammar
 
     public function prepareBindingsForUpdate(array $bindings, array $values): array
     {
-        $cleanBindings = Collection::make($bindings)->except(['select', 'join'])->all();
+        $cleanBindings = Arr::except($bindings, ['select', 'join']);
+        $values = Arr::flatten(array_map(fn ($value) => value($value), $values));
 
-        return array_values(array_merge($values, $cleanBindings));
+        return array_values(array_merge($bindings['join'], $values, Arr::flatten($cleanBindings)));
     }
 
     public function compileRandom($seed): string
     {
         return 'RAND()';
+    }
+
+    protected function compileLock(Builder $query, $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        return $value ? 'for update with lock' : 'with lock';
     }
 
     public function compileDelete(Builder $query): string
@@ -191,5 +208,3 @@ class FirebirdGrammar extends Grammar
         return ' rows '.((int) $offset + 1).' to 2147483647';
     }
 }
-
-

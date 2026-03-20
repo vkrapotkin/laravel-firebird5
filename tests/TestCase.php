@@ -13,6 +13,20 @@ abstract class TestCase extends Orchestra
     {
         return [FirebirdServiceProvider::class];
     }
+
+    protected function getEnvironmentSetUp($app): void
+    {
+        $database = getenv('FIREBIRD_TEST_DB') ?: dirname(__DIR__).DIRECTORY_SEPARATOR.'db'.DIRECTORY_SEPARATOR.'test.fdb';
+
+        $app['config']->set('database.default', 'firebird');
+        $app['config']->set('database.connections.firebird', [
+            'driver' => 'firebird',
+            'database' => $database,
+            'charset' => 'UTF8',
+            'username' => getenv('FIREBIRD_TEST_USER') ?: 'SYSDBA',
+            'password' => getenv('FIREBIRD_TEST_PASSWORD') ?: '1619092230',
+            'prefix' => '',
+            'dialect' => 3,
+        ]);
+    }
 }
-
-

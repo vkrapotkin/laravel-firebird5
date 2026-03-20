@@ -13,22 +13,18 @@ class FirebirdServiceProvider extends ServiceProvider
     {
         $this->app->resolving('db', function ($db): void {
             $db->extend('firebird', function (array $config, string $name): FirebirdConnection {
+                $config['name'] = $name;
+
                 $connector = new FirebirdConnector();
                 $pdo = $connector->connect($config);
 
-                $connection = new FirebirdConnection(
+                return new FirebirdConnection(
                     $pdo,
                     $config['database'],
                     $config['prefix'] ?? '',
                     $config
                 );
-
-                $connection->setName($name);
-
-                return $connection;
             });
         });
     }
 }
-
-

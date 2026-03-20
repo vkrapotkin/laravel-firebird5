@@ -4,11 +4,12 @@ Independent Laravel package with a Firebird SQL 5 driver for Laravel 13.
 
 ## Features
 
-- `firebird` connection driver for Laravel 13
-- PDO Firebird connector with DSN builder
-- Query grammar for Firebird 5 pagination, `insertGetId()`, `DELETE ... ROWS`, and single-row `upsert`
-- Expanded schema grammar for common DDL and schema introspection
-- Package auto-discovery
+- `firebird` connection driver for Laravel 13 with package auto-discovery
+- PDO Firebird connector with DSN builder for local and host-based database paths
+- Query support for pagination, `insertGetId()`, `insertUsing()`, `DELETE ... ROWS`, single-row `upsert`, `union all`, `lockForUpdate()`, and `sharedLock()`
+- Schema support for create, alter, `change()`, `renameColumn()`, `dropColumn()`, indexes, unique constraints, foreign keys, views, and bulk dropping of tables/views
+- Schema introspection for tables, views, columns, indexes, foreign keys, and domains via `getTypes()`
+- Firebird-aware transaction handling for top-level Laravel transaction blocks
 
 ## Requirements
 
@@ -69,11 +70,47 @@ DB_DIALECT=3
 ## Notes
 
 - The package targets Firebird SQL 5 syntax and PDO Firebird.
-- Schema coverage is significantly broader than a minimal connection-only driver, but real integration testing still depends on a working `pdo_firebird` build in your environment.
 - The package namespace is `Vkrapotkin\LaravelFirebird5`.
+- Query and schema behavior is covered by unit tests and real integration tests against a Firebird 5 database recreated on demand.
+
+## Known Limitations
+
+- `rename table` is not exposed because a reliable Firebird 5 + `PDO_FIREBIRD` path was not confirmed in this driver flow.
+- Nested transactions are not supported through PDO; the driver supports a single top-level transaction boundary only.
+- `insertOrIgnore*` paths are intentionally unsupported and follow Laravel's base runtime exception behavior.
+- Savepoint behavior is not advertised until it is validated on the Firebird/PDO combination used by this package.
+
+## Transactions
+
+Firebird with `PDO_FIREBIRD` often keeps the connection inside an already active transaction. Because of that, this driver adapts Laravel transaction handling as follows:
+
+- A top-level `beginTransaction()` / `commit()` / `rollBack()` block is supported.
+- If PDO already reports an active transaction, the driver adopts that transaction instead of trying to open a second physical transaction.
+- Nested transactions are not supported through PDO and will throw a `RuntimeException`.
+- Schema operations are not wrapped in grammar-managed transactions.
+
+Recommended usage:
+
+```php
+DB::beginTransaction();
+
+try {
+    // write queries...
+    DB::commit();
+} catch (\Throwable $e) {
+    DB::rollBack();
+    throw $e;
+}
+```
+
+Avoid opening nested transaction blocks on the same Firebird connection until savepoint behavior is explicitly implemented and validated.
 
 ## Testing
 
 ```bash
 composer test
+vendor\bin\phpunit --testsuite Unit
+vendor\bin\phpunit --testsuite Integration --display-warnings
 ```
+
+
