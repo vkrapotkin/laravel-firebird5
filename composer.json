@@ -1,0 +1,57 @@
+{
+    "name": "vkrapotkin/laravel-firebird5",
+    "description": "Laravel 13 database driver package for Firebird SQL 5 via PDO_FIREBIRD.",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/vkrapotkin/laravel-firebird5",
+    "keywords": [
+        "laravel",
+        "firebird",
+        "firebirdsql",
+        "database",
+        "pdo",
+        "laravel-driver"
+    ],
+    "authors": [
+        {
+            "name": "Vladimir Krapotkin",
+            "homepage": "https://github.com/vkrapotkin"
+        }
+    ],
+    "support": {
+        "source": "https://github.com/vkrapotkin/laravel-firebird5",
+        "issues": "https://github.com/vkrapotkin/laravel-firebird5/issues"
+    },
+    "require": {
+        "php": "^8.3",
+        "ext-pdo": "*",
+        "illuminate/database": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vkrapotkin\\LaravelFirebird5\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Vkrapotkin\\LaravelFirebird5\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Vkrapotkin\\LaravelFirebird5\\FirebirdServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
