@@ -11,6 +11,24 @@ use RuntimeException;
 
 class FirebirdGrammar extends Grammar
 {
+    protected bool $quoteIdentifiers = true;
+
+    public function setQuoteIdentifiers(bool $quoteIdentifiers): static
+    {
+        $this->quoteIdentifiers = $quoteIdentifiers;
+
+        return $this;
+    }
+
+    protected function wrapValue($value)
+    {
+        if ($value !== '*' && ! $this->quoteIdentifiers) {
+            return $value;
+        }
+
+        return parent::wrapValue($value);
+    }
+
     public function compileSelect(Builder $query): string
     {
         if (($query->unions || $query->havings) && $query->aggregate) {

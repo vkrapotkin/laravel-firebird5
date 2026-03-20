@@ -11,11 +11,29 @@ use RuntimeException;
 
 class FirebirdGrammar extends Grammar
 {
+    protected bool $quoteIdentifiers = true;
+
     protected $modifiers = ['Default', 'Increment', 'Nullable'];
 
     protected $serials = ['bigInteger', 'integer', 'mediumInteger', 'smallInteger', 'tinyInteger'];
 
     protected $transactions = false;
+
+    public function setQuoteIdentifiers(bool $quoteIdentifiers): static
+    {
+        $this->quoteIdentifiers = $quoteIdentifiers;
+
+        return $this;
+    }
+
+    protected function wrapValue($value)
+    {
+        if ($value !== '*' && ! $this->quoteIdentifiers) {
+            return $value;
+        }
+
+        return parent::wrapValue($value);
+    }
 
     public function compileSchemas(): string
     {
@@ -516,11 +534,3 @@ SQL, $this->quoteString($table));
         return $this->{$method}($column);
     }
 }
-
-
-
-
-
-
-
-
