@@ -88,6 +88,20 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+    public function test_it_compiles_exists_query_without_select_exists_expression(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+
+        $builder->from('users')->where('id', '69153ec9-953b-4339-b86c-3f62f7426073');
+
+        self::assertSame(
+            'select 1 as "exists" from "users" where "id" = ? fetch first 1 rows only',
+            $grammar->compileExists($builder)
+        );
+    }
+
     public function test_it_compiles_shared_lock(): void
     {
         $connection = $this->makeConnection();

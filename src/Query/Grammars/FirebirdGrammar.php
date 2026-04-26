@@ -136,6 +136,15 @@ class FirebirdGrammar extends Grammar
         );
     }
 
+    public function compileExists(Builder $query): string
+    {
+        $existsQuery = clone $query;
+
+        $existsQuery->columns = [];
+
+        return $this->compileSelect($existsQuery->selectRaw('1 as '.$this->wrap('exists'))->limit(1));
+    }
+
     public function prepareBindingsForUpdate(array $bindings, array $values): array
     {
         $cleanBindings = Arr::except($bindings, ['select', 'join']);
