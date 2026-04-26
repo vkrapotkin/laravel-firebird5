@@ -142,7 +142,7 @@ class FirebirdGrammar extends Grammar
 
         $existsQuery->columns = [];
 
-        return $this->compileSelect($existsQuery->selectRaw('1 as '.$this->wrap('exists'))->limit(1));
+        return $this->compileSelect($existsQuery->selectRaw('1 as "exists"')->limit(1));
     }
 
     public function prepareBindingsForUpdate(array $bindings, array $values): array
