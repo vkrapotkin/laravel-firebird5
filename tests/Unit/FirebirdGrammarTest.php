@@ -191,6 +191,36 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+    public function test_it_compiles_metadata_queries_with_uppercase_names_when_identifier_quoting_is_disabled(): void
+    {
+        $grammar = (new FirebirdSchemaGrammar($this->makeConnection()))->setQuoteIdentifiers(false);
+
+        self::assertSame(
+            "select 1 from rdb\$relations where coalesce(rdb\$system_flag, 0) = 0 and rdb\$view_blr is null and rdb\$relation_name = 'MIGRATIONS'",
+            $grammar->compileTableExists(null, 'migrations')
+        );
+
+        self::assertStringContainsString(
+            "where rf.rdb\$relation_name = 'MIGRATIONS'",
+            $grammar->compileColumns(null, 'migrations')
+        );
+
+        self::assertStringContainsString(
+            "where i.rdb\$relation_name = 'MIGRATIONS' and",
+            $grammar->compileIndexes(null, 'migrations')
+        );
+    }
+
+    public function test_firebird_connection_disables_identifier_quoting_by_default(): void
+    {
+        $connection = $this->makeConnection();
+
+        self::assertSame(
+            'select id from users fetch first 1 rows only',
+            $connection->table('users')->select('id')->limit(1)->toSql()
+        );
+    }
+
     public function test_it_compiles_schemas_query(): void
     {
         $grammar = new FirebirdSchemaGrammar($this->makeConnection());

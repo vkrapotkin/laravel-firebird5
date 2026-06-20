@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vkrapotkin\LaravelFirebird5\Schema;
 
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
 
 class FirebirdBuilder extends Builder
@@ -11,6 +12,14 @@ class FirebirdBuilder extends Builder
     public function dropAllTables()
     {
         $tables = array_column($this->getTables(), 'schema_qualified_name');
+
+        foreach ($tables as $table) {
+            foreach ($this->getForeignKeys($table) as $foreignKey) {
+                $this->table($table, function (Blueprint $blueprint) use ($foreignKey): void {
+                    $blueprint->dropForeign($foreignKey['name']);
+                });
+            }
+        }
 
         foreach ($tables as $table) {
             $this->connection->statement(

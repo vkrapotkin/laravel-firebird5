@@ -118,8 +118,8 @@ class FirebirdIntegrationTest extends TestCase
             $table->foreign('widget_id', 'widget_logs_widget_id_foreign')->references('id')->on('widgets');
         });
 
-        $connection->statement('create view "active_widgets" as select "id", "name" from "widgets"');
-        $connection->statement('create view "widget_names" as select "name" from "widgets"');
+        $connection->statement('create view active_widgets as select id, name from widgets');
+        $connection->statement('create view widget_names as select name from widgets');
 
         $columns = $schema->getColumns('widgets');
         $columnNames = array_map(static fn (array $column): string => strtolower($column['name']), $columns);
@@ -492,6 +492,47 @@ class FirebirdIntegrationTest extends TestCase
         }
 
         self::assertSame(0, $connection->transactionLevel());
+    }
+
+    public function test_it_runs_nullable_string_column_migrations_against_existing_tables(): void
+    {
+        $this->migrateBase();
+
+        $path = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'db'.DIRECTORY_SEPARATOR.'tenant-migrations';
+        /** @var Migrator $migrator */
+        $migrator = $this->app->make('migrator');
+
+        $migrator->usingConnection('firebird', function () use ($migrator, $path): void {
+            $ran = array_values($migrator->run([$path]));
+            self::assertCount(1, $ran);
+            self::assertStringEndsWith('2026_06_20_000000_add_mnemo_to_widgets_table.php', $ran[0]);
+        });
+
+        $schema = Schema::connection('firebird');
+        $connection = DB::connection('firebird');
+        $mnemoColumn = collect($schema->getColumns('widgets'))
+            ->first(fn (array $column): bool => strtolower($column['name']) === 'mnemo');
+
+        self::assertNotNull($mnemoColumn);
+        self::assertSame('varchar(50)', strtolower($mnemoColumn['type']));
+        self::assertTrue((bool) $mnemoColumn['nullable']);
+
+        $connection->table('widgets')->insert([
+            'name' => 'tenant',
+            'mnemo' => 'pda',
+            'created_at' => '2026-06-20 10:00:00',
+            'updated_at' => '2026-06-20 10:00:00',
+        ]);
+
+        self::assertSame('pda', $connection->table('widgets')->where('name', 'tenant')->value('mnemo'));
+
+        $migrator->usingConnection('firebird', function () use ($migrator, $path): void {
+            $rolledBack = array_values($migrator->rollback([$path]));
+            self::assertCount(1, $rolledBack);
+            self::assertStringEndsWith('2026_06_20_000000_add_mnemo_to_widgets_table.php', $rolledBack[0]);
+        });
+
+        self::assertFalse($schema->hasColumn('widgets', 'mnemo'));
     }
 
     private function migrateBase(): void

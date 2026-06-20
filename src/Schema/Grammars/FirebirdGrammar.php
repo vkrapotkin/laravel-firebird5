@@ -44,7 +44,7 @@ class FirebirdGrammar extends Grammar
     {
         return sprintf(
             'select 1 from rdb$relations where coalesce(rdb$system_flag, 0) = 0 and rdb$view_blr is null and rdb$relation_name = %s',
-            $this->quoteString($table)
+            $this->quoteString($this->metadataIdentifier($table))
         );
     }
 
@@ -138,7 +138,7 @@ from rdb$relation_fields rf
 join rdb$fields f on f.rdb$field_name = rf.rdb$field_source
 where rf.rdb$relation_name = %s
 order by rf.rdb$field_position
-SQL, $this->quoteString($table));
+SQL, $this->quoteString($this->metadataIdentifier($table)));
     }
 
     public function compileIndexes($schema, $table): string
@@ -154,7 +154,7 @@ join rdb$index_segments s on s.rdb$index_name = i.rdb$index_name
 left join rdb$relation_constraints rc on rc.rdb$index_name = i.rdb$index_name
 where i.rdb$relation_name = %s and coalesce(i.rdb$system_flag, 0) = 0
 order by trim(i.rdb$index_name), s.rdb$field_position
-SQL, $this->quoteString($table));
+SQL, $this->quoteString($this->metadataIdentifier($table)));
     }
 
     public function compileForeignKeys($schema, $table): string
@@ -175,7 +175,7 @@ join rdb$relation_constraints ref_rc on ref_rc.rdb$constraint_name = ref.rdb$con
 join rdb$index_segments ref_seg on ref_seg.rdb$index_name = ref_rc.rdb$index_name and ref_seg.rdb$field_position = seg.rdb$field_position
 where rc.rdb$relation_name = %s and rc.rdb$constraint_type = 'FOREIGN KEY'
 order by trim(rc.rdb$constraint_name), seg.rdb$field_position
-SQL, $this->quoteString($table));
+SQL, $this->quoteString($this->metadataIdentifier($table)));
     }
 
     public function compileCreate(Blueprint $blueprint, Fluent $command): string
@@ -532,5 +532,10 @@ SQL, $this->quoteString($table));
         }
 
         return $this->{$method}($column);
+    }
+
+    private function metadataIdentifier(string $identifier): string
+    {
+        return $this->quoteIdentifiers ? $identifier : strtoupper($identifier);
     }
 }

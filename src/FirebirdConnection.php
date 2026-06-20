@@ -21,7 +21,7 @@ class FirebirdConnection extends Connection
     {
         $grammar = new FirebirdQueryGrammar($this);
         $grammar->setTablePrefix($this->getTablePrefix());
-        $grammar->setQuoteIdentifiers((bool) ($this->config['quote_identifiers'] ?? true));
+        $grammar->setQuoteIdentifiers((bool) ($this->config['quote_identifiers'] ?? false));
 
         return $grammar;
     }
@@ -35,7 +35,7 @@ class FirebirdConnection extends Connection
     {
         $grammar = new FirebirdSchemaGrammar($this);
         $grammar->setTablePrefix($this->getTablePrefix());
-        $grammar->setQuoteIdentifiers((bool) ($this->config['quote_identifiers'] ?? true));
+        $grammar->setQuoteIdentifiers((bool) ($this->config['quote_identifiers'] ?? false));
 
         return $grammar;
     }
