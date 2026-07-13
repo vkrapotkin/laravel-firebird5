@@ -444,7 +444,7 @@ class FirebirdIntegrationTest extends TestCase
         self::assertFalse($schema->hasTable('widget_copies'));
     }
 
-    public function test_it_adopts_the_active_firebird_transaction_and_rejects_nested_begin(): void
+    public function test_it_adopts_the_active_firebird_transaction_and_supports_nested_savepoints(): void
     {
         $this->migrateBase();
 
@@ -466,7 +466,10 @@ class FirebirdIntegrationTest extends TestCase
         $connection->commit();
 
         self::assertSame(0, $connection->transactionLevel());
-        self::assertSame('tx-commit', $widgets->where('id', $insertedId)->value('name'));
+        self::assertSame(
+            'tx-commit',
+            $connection->table('widgets')->where('id', $insertedId)->value('name')
+        );
 
         $connection->beginTransaction();
 
@@ -479,19 +482,40 @@ class FirebirdIntegrationTest extends TestCase
         $connection->rollBack();
 
         self::assertSame(0, $connection->transactionLevel());
-        self::assertNull($widgets->where('id', $rolledBackId)->value('name'));
+        self::assertNull($connection->table('widgets')->where('id', $rolledBackId)->value('name'));
 
         $connection->beginTransaction();
 
-        try {
-            $this->expectException(\RuntimeException::class);
-            $this->expectExceptionMessage('Firebird connection does not support nested transactions via PDO.');
-            $connection->beginTransaction();
-        } finally {
-            $connection->rollBack();
-        }
+        $outerId = $widgets->insertGetId([
+            'name' => 'tx-outer',
+            'created_at' => '2026-03-20 15:10:00',
+            'updated_at' => '2026-03-20 15:10:00',
+        ]);
+
+        $connection->beginTransaction();
+        self::assertSame(2, $connection->transactionLevel());
+
+        $nestedId = $widgets->insertGetId([
+            'name' => 'tx-nested-rollback',
+            'created_at' => '2026-03-20 15:15:00',
+            'updated_at' => '2026-03-20 15:15:00',
+        ]);
+
+        $connection->rollBack();
+        self::assertSame(1, $connection->transactionLevel());
+        self::assertSame(
+            'tx-outer',
+            $connection->table('widgets')->where('id', $outerId)->value('name')
+        );
+        self::assertNull($connection->table('widgets')->where('id', $nestedId)->value('name'));
+        $connection->commit();
 
         self::assertSame(0, $connection->transactionLevel());
+        self::assertSame(
+            'tx-outer',
+            $connection->table('widgets')->where('id', $outerId)->value('name')
+        );
+        self::assertNull($connection->table('widgets')->where('id', $nestedId)->value('name'));
     }
 
     public function test_it_runs_nullable_string_column_migrations_against_existing_tables(): void

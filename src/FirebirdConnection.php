@@ -9,7 +9,6 @@ use Illuminate\Database\Query\Grammars\Grammar as QueryGrammar;
 use Illuminate\Database\Query\Processors\Processor;
 use Illuminate\Database\Schema\Builder as SchemaBuilder;
 use Illuminate\Database\Schema\Grammars\Grammar as SchemaGrammar;
-use RuntimeException;
 use Vkrapotkin\LaravelFirebird5\Query\Grammars\FirebirdGrammar as FirebirdQueryGrammar;
 use Vkrapotkin\LaravelFirebird5\Query\Processors\FirebirdProcessor;
 use Vkrapotkin\LaravelFirebird5\Schema\FirebirdBuilder;
@@ -63,6 +62,8 @@ class FirebirdConnection extends Connection
             return;
         }
 
-        throw new RuntimeException('Firebird connection does not support nested transactions via PDO.');
+        if ($this->queryGrammar->supportsSavepoints()) {
+            $this->createSavepoint();
+        }
     }
 }
