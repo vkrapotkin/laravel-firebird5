@@ -88,6 +88,20 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+    public function test_it_compiles_pagination_before_lock_for_update(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+
+        $builder->from('users')->select(['id'])->where('id', 1)->lockForUpdate()->limit(1);
+
+        self::assertSame(
+            'select "id" from "users" where "id" = ? fetch first 1 rows only for update with lock',
+            $grammar->compileSelect($builder)
+        );
+    }
+
     public function test_it_compiles_exists_query_without_select_exists_expression(): void
     {
         $connection = $this->makeConnection();

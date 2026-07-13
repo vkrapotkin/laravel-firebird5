@@ -40,11 +40,16 @@ class FirebirdGrammar extends Grammar
         }
 
         $original = $query->columns;
+        $lock = $query->lock;
 
         if (is_null($query->columns)) {
             $query->columns = ['*'];
         }
 
+        // Firebird requires OFFSET/FETCH before FOR UPDATE/LOCK. Laravel's
+        // default component order compiles the lock before the pagination
+        // clause, which is invalid when first()/limit() and a lock are combined.
+        $query->lock = null;
         $sql = trim($this->concatenate($this->compileComponents($query)));
         $sql .= $this->compilePaginationClause($query->limit, $query->offset);
 
@@ -52,7 +57,12 @@ class FirebirdGrammar extends Grammar
             $sql .= ' '.$this->compileUnions($query);
         }
 
+        if (! is_null($lock)) {
+            $sql .= ' '.$this->compileLock($query, $lock);
+        }
+
         $query->columns = $original;
+        $query->lock = $lock;
 
         return $sql;
     }
