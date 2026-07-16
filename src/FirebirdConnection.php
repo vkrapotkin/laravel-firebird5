@@ -185,7 +185,7 @@ class FirebirdConnection extends Connection
 
     public function firebirdColumnUsesBinaryUuid(mixed $table, mixed $column): bool
     {
-        $tableName = $this->firebirdNormalizeTableName($table);
+        $tableName = $this->firebirdTableNameForColumn($table, $column);
         $columnName = $this->firebirdNormalizeColumnName($column);
 
         if ($tableName === null || $columnName === null) {
@@ -375,6 +375,38 @@ SQL);
         $parts = explode('.', trim($identifier));
 
         return strtolower($this->firebirdNormalizeIdentifier((string) end($parts)));
+    }
+
+    private function firebirdTableNameForColumn(mixed $table, mixed $column): ?string
+    {
+        $tableName = $this->firebirdNormalizeTableName($table);
+        $qualifier = $this->firebirdColumnQualifier($column);
+
+        if ($qualifier === null) {
+            return $tableName;
+        }
+
+        if ($tableName !== null && in_array($qualifier, $this->firebirdTableQualifiers($table), true)) {
+            return $tableName;
+        }
+
+        return $qualifier;
+    }
+
+    private function firebirdColumnQualifier(mixed $column): ?string
+    {
+        if (! is_string($column) || ! str_contains($column, '.')) {
+            return null;
+        }
+
+        $parts = explode('.', trim($column));
+        array_pop($parts);
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return $this->firebirdNormalizeQualifier((string) end($parts));
     }
 
     /**

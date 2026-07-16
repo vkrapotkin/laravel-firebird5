@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Convert UUID bindings using the qualified table name in joined queries, such as `registrations.contest_id`.
+- Preserve UUID conversion for aliases of the base table, such as `up.id` when querying `uuid_playground as up`.
+
 ## 0.1.0
 
 Initial public release of the Laravel 13 Firebird 5 driver package.

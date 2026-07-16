@@ -504,6 +504,28 @@ class FirebirdIntegrationTest extends TestCase
         self::assertSame($id, $rowWithAliasedWildcard->ID ?? $rowWithAliasedWildcard->id);
         self::assertSame($parentId, $rowWithAliasedWildcard->PARENT_ID ?? $rowWithAliasedWildcard->parent_id);
 
+        $rowWithAliasedWhere = $connection->table('uuid_playground as up')
+            ->select('up.*')
+            ->where('up.id', $id)
+            ->first();
+
+        self::assertSame($id, $rowWithAliasedWhere->ID ?? $rowWithAliasedWhere->id);
+
+        $connection->statement('create table uuid_children (id guid_binary not null primary key, parent_id guid_binary not null)');
+        $childId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c15';
+        $connection->table('uuid_children')->insert([
+            'id' => $childId,
+            'parent_id' => $id,
+        ]);
+
+        $joinedChild = $connection->table('uuid_children')
+            ->join('uuid_playground', 'uuid_playground.id', '=', 'uuid_children.parent_id')
+            ->select('uuid_children.*')
+            ->where('uuid_playground.id', $id)
+            ->first();
+
+        self::assertSame($childId, $joinedChild->ID ?? $joinedChild->id);
+
         $replacementParentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c14';
 
         self::assertSame(1, $connection->table('uuid_playground')->where('text_uuid', $textUuid)->update([
@@ -517,6 +539,7 @@ class FirebirdIntegrationTest extends TestCase
 
         self::assertSame(1, $connection->table('uuid_playground')->where('id', $id)->delete());
 
+        $connection->statement('drop table uuid_children');
         $connection->statement('drop table uuid_playground');
         $connection->statement('drop domain guid_binary');
     }
