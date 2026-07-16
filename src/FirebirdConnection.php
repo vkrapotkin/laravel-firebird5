@@ -224,7 +224,7 @@ class FirebirdConnection extends Connection
         foreach ($wheres as $where) {
             $type = strtolower((string) ($where['type'] ?? ''));
 
-            if ($type === 'raw') {
+            if ($type === 'raw' && str_contains((string) ($where['sql'] ?? ''), '?')) {
                 return true;
             }
 
@@ -316,12 +316,20 @@ SQL);
         }
 
         $selected = [];
+        $tableQualifiers = $this->firebirdTableQualifiers($table);
 
         foreach ($columns as $column) {
             if (! is_string($column) || $column === '*') {
                 if ($column === '*') {
                     array_push($selected, ...$binaryColumns);
                 }
+                continue;
+            }
+
+            if (preg_match('/^(.+)\.\*$/', trim($column), $matches)
+                && in_array($this->firebirdNormalizeQualifier($matches[1]), $tableQualifiers, true)
+            ) {
+                array_push($selected, ...$binaryColumns);
                 continue;
             }
 
@@ -333,6 +341,40 @@ SQL);
         }
 
         return array_values(array_unique($selected));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function firebirdTableQualifiers(mixed $table): array
+    {
+        if (! is_string($table) || trim($table) === '') {
+            return [];
+        }
+
+        $table = trim($table);
+        $source = $table;
+        $alias = null;
+
+        if (preg_match('/^(.+?)\s+(?:as\s+)?([^\s]+)$/i', $table, $matches)) {
+            $source = $matches[1];
+            $alias = $matches[2];
+        }
+
+        $qualifiers = [$this->firebirdNormalizeQualifier($source)];
+
+        if ($alias !== null) {
+            $qualifiers[] = $this->firebirdNormalizeQualifier($alias);
+        }
+
+        return array_values(array_unique(array_filter($qualifiers)));
+    }
+
+    private function firebirdNormalizeQualifier(string $identifier): string
+    {
+        $parts = explode('.', trim($identifier));
+
+        return strtolower($this->firebirdNormalizeIdentifier((string) end($parts)));
     }
 
     /**

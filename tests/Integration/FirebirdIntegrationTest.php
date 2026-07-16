@@ -481,6 +481,29 @@ class FirebirdIntegrationTest extends TestCase
         self::assertSame($parentId, $row->PARENT_ID ?? $row->parent_id);
         self::assertSame($textUuid, trim($row->TEXT_UUID ?? $row->text_uuid));
 
+        $rowWithUnboundRawWhere = $connection->table('uuid_playground')
+            ->whereRaw('1 = 1')
+            ->where('id', $id)
+            ->first();
+
+        self::assertSame($id, $rowWithUnboundRawWhere->ID ?? $rowWithUnboundRawWhere->id);
+
+        $rowWithQualifiedWildcard = $connection->table('uuid_playground')
+            ->select('uuid_playground.*')
+            ->where('id', $id)
+            ->first();
+
+        self::assertSame($id, $rowWithQualifiedWildcard->ID ?? $rowWithQualifiedWildcard->id);
+        self::assertSame($parentId, $rowWithQualifiedWildcard->PARENT_ID ?? $rowWithQualifiedWildcard->parent_id);
+
+        $rowWithAliasedWildcard = $connection->table('uuid_playground as up')
+            ->select('up.*')
+            ->where('id', $id)
+            ->first();
+
+        self::assertSame($id, $rowWithAliasedWildcard->ID ?? $rowWithAliasedWildcard->id);
+        self::assertSame($parentId, $rowWithAliasedWildcard->PARENT_ID ?? $rowWithAliasedWildcard->parent_id);
+
         $replacementParentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c14';
 
         self::assertSame(1, $connection->table('uuid_playground')->where('text_uuid', $textUuid)->update([
