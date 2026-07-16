@@ -6,6 +6,7 @@ namespace Vkrapotkin\LaravelFirebird5\Query\Processors;
 
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Processors\Processor;
+use Vkrapotkin\LaravelFirebird5\FirebirdConnection;
 
 class FirebirdProcessor extends Processor
 {
@@ -19,8 +20,27 @@ class FirebirdProcessor extends Processor
 
         $record = (array) $result[0];
         $key = $sequence ?: array_key_first($record);
+        $value = $this->value($record, (string) $key);
 
-        return $record[$key] ?? null;
+        if ($query->getConnection() instanceof FirebirdConnection) {
+            return $query->getConnection()->firebirdConvertColumnValueFromStorage($query->from, $key, $value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private function value(array $record, string $key): mixed
+    {
+        foreach ($record as $recordKey => $value) {
+            if (strtolower((string) $recordKey) === strtolower($key)) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     public function processTables($results)
@@ -155,5 +175,3 @@ class FirebirdProcessor extends Processor
         return $this->nullableTrim($row, $key, $default) ?? $default;
     }
 }
-
-

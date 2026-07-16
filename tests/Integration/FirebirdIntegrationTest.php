@@ -58,6 +58,11 @@ class FirebirdIntegrationTest extends TestCase
         self::assertNotNull($firstId);
         self::assertNotNull($secondId);
         self::assertSame(2, $widgets()->count());
+        self::assertSame(2, $widgets()->whereDate('created_at', '2026-03-20')->count());
+        self::assertSame(1, $widgets()->whereTime('created_at', '12:05:00')->count());
+        self::assertSame(2, $widgets()->whereDay('created_at', 20)->count());
+        self::assertSame(2, $widgets()->whereMonth('created_at', 3)->count());
+        self::assertSame(2, $widgets()->whereYear('created_at', 2026)->count());
 
         $names = $widgets()->orderBy('id')->pluck('name')->all();
         self::assertSame(['alpha', 'beta'], $names);
@@ -442,6 +447,55 @@ class FirebirdIntegrationTest extends TestCase
 
         $schema->drop('widget_copies');
         self::assertFalse($schema->hasTable('widget_copies'));
+    }
+
+    public function test_it_converts_uuid_values_using_firebird_column_metadata(): void
+    {
+        $connection = DB::connection('firebird');
+
+        $connection->statement('create domain guid_binary as char(16) character set octets');
+        $connection->statement('create table uuid_playground (id guid_binary not null primary key, parent_id guid_binary, text_uuid varchar(36))');
+
+        $id = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c11';
+        $parentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c12';
+        $textUuid = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c13';
+
+        $connection->table('uuid_playground')->insert([
+            'id' => $id,
+            'parent_id' => $parentId,
+            'text_uuid' => $textUuid,
+        ]);
+
+        $stored = $connection->getPdo()
+            ->query('select id, parent_id, text_uuid from uuid_playground')
+            ->fetch(\PDO::FETCH_ASSOC);
+        $stored = array_change_key_case($stored, CASE_LOWER);
+
+        self::assertSame(16, strlen($stored['id']));
+        self::assertSame(16, strlen($stored['parent_id']));
+        self::assertSame($textUuid, trim($stored['text_uuid']));
+
+        $row = $connection->table('uuid_playground')->where('id', $id)->first();
+
+        self::assertSame($id, $row->ID ?? $row->id);
+        self::assertSame($parentId, $row->PARENT_ID ?? $row->parent_id);
+        self::assertSame($textUuid, trim($row->TEXT_UUID ?? $row->text_uuid));
+
+        $replacementParentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c14';
+
+        self::assertSame(1, $connection->table('uuid_playground')->where('text_uuid', $textUuid)->update([
+            'parent_id' => $replacementParentId,
+        ]));
+
+        self::assertSame(
+            $replacementParentId,
+            $connection->table('uuid_playground')->whereIn('id', [$id])->value('parent_id')
+        );
+
+        self::assertSame(1, $connection->table('uuid_playground')->where('id', $id)->delete());
+
+        $connection->statement('drop table uuid_playground');
+        $connection->statement('drop domain guid_binary');
     }
 
     public function test_it_adopts_the_active_firebird_transaction_and_supports_nested_savepoints(): void

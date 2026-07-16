@@ -144,6 +144,25 @@ class FirebirdGrammarTest extends TestCase
         );
     }
 
+    public function test_it_compiles_date_based_wheres_with_firebird_syntax(): void
+    {
+        $connection = $this->makeConnection();
+        $grammar = new FirebirdQueryGrammar($connection);
+        $builder = new Builder($connection, $grammar);
+
+        $builder->from('events')
+            ->whereDate('starts_at', '2026-07-15')
+            ->whereTime('starts_at', '10:30:00')
+            ->whereDay('starts_at', 15)
+            ->whereMonth('starts_at', 7)
+            ->whereYear('starts_at', 2026);
+
+        self::assertSame(
+            'select * from "events" where cast("starts_at" as date) = ? and cast("starts_at" as time) = ? and extract(day from "starts_at") = ? and extract(month from "starts_at") = ? and extract(year from "starts_at") = ?',
+            $grammar->compileSelect($builder)
+        );
+    }
+
     public function test_it_rejects_insert_or_ignore(): void
     {
         $this->expectException(RuntimeException::class);

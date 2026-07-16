@@ -168,6 +168,19 @@ class FirebirdGrammar extends Grammar
         return 'RAND()';
     }
 
+    protected function dateBasedWhere($type, Builder $query, $where): string
+    {
+        $column = $this->wrap($where['column']);
+        $value = $this->parameter($where['value']);
+        $expression = match ($type) {
+            'date', 'time' => "cast({$column} as {$type})",
+            'day', 'month', 'year' => "extract({$type} from {$column})",
+            default => throw new RuntimeException("Unsupported Firebird date part: {$type}"),
+        };
+
+        return $expression.' '.$where['operator'].' '.$value;
+    }
+
     protected function compileLock(Builder $query, $value): string
     {
         if (is_string($value)) {
