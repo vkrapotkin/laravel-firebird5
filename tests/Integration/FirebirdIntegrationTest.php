@@ -455,6 +455,10 @@ class FirebirdIntegrationTest extends TestCase
 
         $connection->statement('create domain guid_binary as char(16) character set octets');
         $connection->statement('create table uuid_playground (id guid_binary not null primary key, parent_id guid_binary, text_uuid varchar(36))');
+        $connection->statement(
+            'create procedure uuid_echo (input_id guid_binary) returns (echoed guid_binary) '.
+            'as begin echoed = input_id; suspend; end'
+        );
 
         $id = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c11';
         $parentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c12';
@@ -480,6 +484,18 @@ class FirebirdIntegrationTest extends TestCase
         self::assertSame($id, $row->ID ?? $row->id);
         self::assertSame($parentId, $row->PARENT_ID ?? $row->parent_id);
         self::assertSame($textUuid, trim($row->TEXT_UUID ?? $row->text_uuid));
+
+        $namedProcedureRow = $connection->selectOne(
+            'select uuid_to_char(echoed) as echoed from uuid_echo(:value)',
+            ['value' => $id]
+        );
+        self::assertSame($id, strtolower(trim($namedProcedureRow->ECHOED ?? $namedProcedureRow->echoed)));
+
+        $positionalProcedureRow = $connection->selectOne(
+            'select uuid_to_char(echoed) as echoed from uuid_echo(?)',
+            [$parentId]
+        );
+        self::assertSame($parentId, strtolower(trim($positionalProcedureRow->ECHOED ?? $positionalProcedureRow->echoed)));
 
         $rowWithUnboundRawWhere = $connection->table('uuid_playground')
             ->whereRaw('1 = 1')
@@ -539,6 +555,7 @@ class FirebirdIntegrationTest extends TestCase
 
         self::assertSame(1, $connection->table('uuid_playground')->where('id', $id)->delete());
 
+        $connection->statement('drop procedure uuid_echo');
         $connection->statement('drop table uuid_children');
         $connection->statement('drop table uuid_playground');
         $connection->statement('drop domain guid_binary');

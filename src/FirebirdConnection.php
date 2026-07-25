@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vkrapotkin\LaravelFirebird5;
 
+use Closure;
 use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder as BaseQueryBuilder;
@@ -25,6 +26,9 @@ class FirebirdConnection extends Connection
 
     /** @var array<string, array<string, string>> */
     private array $columnStorageCache = [];
+
+    /** @var array<string, list<int>> */
+    private array $procedureBinaryUuidParameterCache = [];
 
     public function query(): BaseQueryBuilder
     {
@@ -195,6 +199,15 @@ class FirebirdConnection extends Connection
         return ($this->firebirdColumnStorage($tableName)[$columnName] ?? null) === 'binary_uuid';
     }
 
+    protected function run($query, $bindings, Closure $callback)
+    {
+        return parent::run(
+            $query,
+            $this->firebirdPrepareProcedureBindings((string) $query, $bindings),
+            $callback
+        );
+    }
+
     protected function createTransaction(): void
     {
         if ($this->transactions === 0) {
@@ -217,6 +230,149 @@ class FirebirdConnection extends Connection
     private function firebirdUuidConversionEnabled(): bool
     {
         return (bool) ($this->config['uuid_conversion'] ?? true);
+    }
+
+    private function firebirdPrepareProcedureBindings(string $query, array $bindings): array
+    {
+        if (! $this->firebirdUuidConversionEnabled() || $bindings === []) {
+            return $bindings;
+        }
+
+        preg_match_all(
+            '/(?:\bfrom\b|\bexecute\s+procedure\b)\s+("[^"]+"|[a-z0-9_$]+)\s*\(([^()]*)\)/i',
+            $query,
+            $calls,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        );
+
+        foreach ($calls as $call) {
+            $procedure = $call[1][0];
+            $argumentsText = $call[2][0];
+            $argumentsOffset = $call[2][1];
+            $binaryParameterIndexes = $this->firebirdProcedureBinaryUuidParameterIndexes($procedure);
+
+            if ($binaryParameterIndexes === []) {
+                continue;
+            }
+
+            $argumentOffset = 0;
+            foreach (explode(',', $argumentsText) as $parameterIndex => $argument) {
+                $trimmedArgument = trim($argument);
+
+                if (in_array($parameterIndex, $binaryParameterIndexes, true)
+                    && is_string($value = $this->firebirdProcedureArgumentBinding(
+                        $query,
+                        $bindings,
+                        $trimmedArgument,
+                        $argumentsOffset + $argumentOffset
+                    ))
+                    && preg_match(self::UUID_PATTERN, $value)
+                ) {
+                    $this->firebirdReplaceProcedureArgumentBinding(
+                        $query,
+                        $bindings,
+                        $trimmedArgument,
+                        $argumentsOffset + $argumentOffset,
+                        hex2bin(str_replace('-', '', $value))
+                    );
+                }
+
+                $argumentOffset += strlen($argument) + 1;
+            }
+        }
+
+        return $bindings;
+    }
+
+    private function firebirdProcedureArgumentBinding(
+        string $query,
+        array $bindings,
+        string $argument,
+        int $argumentOffset
+    ): mixed {
+        if (preg_match('/^:([a-z_][a-z0-9_]*)$/i', $argument, $match)) {
+            return $bindings[$match[1]] ?? $bindings[':'.$match[1]] ?? null;
+        }
+
+        if ($argument === '?') {
+            $index = substr_count(substr($query, 0, $argumentOffset), '?');
+
+            return $bindings[$index] ?? null;
+        }
+
+        return null;
+    }
+
+    private function firebirdReplaceProcedureArgumentBinding(
+        string $query,
+        array &$bindings,
+        string $argument,
+        int $argumentOffset,
+        string $value
+    ): void {
+        if (preg_match('/^:([a-z_][a-z0-9_]*)$/i', $argument, $match)) {
+            if (array_key_exists($match[1], $bindings)) {
+                $bindings[$match[1]] = $value;
+            } elseif (array_key_exists(':'.$match[1], $bindings)) {
+                $bindings[':'.$match[1]] = $value;
+            }
+
+            return;
+        }
+
+        if ($argument === '?') {
+            $index = substr_count(substr($query, 0, $argumentOffset), '?');
+
+            if (array_key_exists($index, $bindings)) {
+                $bindings[$index] = $value;
+            }
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function firebirdProcedureBinaryUuidParameterIndexes(string $procedure): array
+    {
+        $metadataName = $this->firebirdMetadataIdentifier(
+            $this->firebirdNormalizeIdentifier($procedure)
+        );
+
+        if (array_key_exists($metadataName, $this->procedureBinaryUuidParameterCache)) {
+            return $this->procedureBinaryUuidParameterCache[$metadataName];
+        }
+
+        if ($this->getPdo() === null) {
+            return $this->procedureBinaryUuidParameterCache[$metadataName] = [];
+        }
+
+        $statement = $this->getPdo()->prepare(<<<'SQL'
+select
+    p.rdb$parameter_number as parameter_number,
+    f.rdb$field_type as field_type,
+    f.rdb$field_sub_type as field_sub_type,
+    f.rdb$field_length as field_length,
+    f.rdb$character_length as char_len,
+    trim(cs.rdb$character_set_name) as character_set_name
+from rdb$procedure_parameters p
+join rdb$fields f on f.rdb$field_name = p.rdb$field_source
+left join rdb$character_sets cs on cs.rdb$character_set_id = f.rdb$character_set_id
+where p.rdb$procedure_name = ?
+  and p.rdb$parameter_type = 0
+order by p.rdb$parameter_number
+SQL);
+
+        $statement->bindValue(1, $metadataName, PDO::PARAM_STR);
+        $statement->execute();
+
+        $indexes = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if ($this->firebirdMetadataColumnUsesBinaryUuid($row)) {
+                $indexes[] = (int) $this->firebirdRowValue($row, 'parameter_number', 0);
+            }
+        }
+
+        return $this->procedureBinaryUuidParameterCache[$metadataName] = $indexes;
     }
 
     private function firebirdWhereBindingsAreAmbiguous(array $wheres): bool
