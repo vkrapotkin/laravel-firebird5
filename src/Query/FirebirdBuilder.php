@@ -23,7 +23,12 @@ class FirebirdBuilder extends Builder
             return parent::getBindings();
         }
 
-        return $this->connection->firebirdPrepareQueryBindings($this->from, $this->bindings, $this->wheres);
+        return $this->connection->firebirdPrepareQueryBindings(
+            $this->from,
+            $this->bindings,
+            $this->wheres,
+            $this->joins ?? []
+        );
     }
 
     public function insert(array $values)
@@ -184,6 +189,11 @@ class FirebirdBuilder extends Builder
             return $this->bindings['where'] ?? [];
         }
 
-        return $this->connection->firebirdPrepareWhereBindings($this->from, $this->wheres, $this->bindings['where'] ?? []);
+        return $this->connection->firebirdPrepareWhereBindings(
+            $this->from,
+            $this->wheres,
+            $this->bindings['where'] ?? [],
+            $this->joins ?? []
+        );
     }
 }

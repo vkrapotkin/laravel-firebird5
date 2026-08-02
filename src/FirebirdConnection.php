@@ -71,12 +71,17 @@ class FirebirdConnection extends Connection
         return new FirebirdSchemaBuilder($this);
     }
 
-    public function firebirdPrepareColumnValue(mixed $table, mixed $column, mixed $value): mixed
+    public function firebirdPrepareColumnValue(
+        mixed $table,
+        mixed $column,
+        mixed $value,
+        array $joins = []
+    ): mixed
     {
         if (! $this->firebirdUuidConversionEnabled()
             || ! is_string($value)
             || ! preg_match(self::UUID_PATTERN, $value)
-            || ! $this->firebirdColumnUsesBinaryUuid($table, $column)
+            || ! $this->firebirdColumnUsesBinaryUuid($table, $column, $joins)
         ) {
             return $value;
         }
@@ -84,19 +89,34 @@ class FirebirdConnection extends Connection
         return hex2bin(str_replace('-', '', $value));
     }
 
-    public function firebirdPrepareQueryBindings(mixed $table, array $bindings, array $wheres): array
+    public function firebirdPrepareQueryBindings(
+        mixed $table,
+        array $bindings,
+        array $wheres,
+        array $joins = []
+    ): array
     {
         if (! $this->firebirdUuidConversionEnabled()) {
             return Arr::flatten($bindings);
         }
 
         $prepared = $bindings;
-        $prepared['where'] = $this->firebirdPrepareWhereBindings($table, $wheres, $bindings['where'] ?? []);
+        $prepared['where'] = $this->firebirdPrepareWhereBindings(
+            $table,
+            $wheres,
+            $bindings['where'] ?? [],
+            $joins
+        );
 
         return Arr::flatten($prepared);
     }
 
-    public function firebirdPrepareWhereBindings(mixed $table, array $wheres, array $bindings): array
+    public function firebirdPrepareWhereBindings(
+        mixed $table,
+        array $wheres,
+        array $bindings,
+        array $joins = []
+    ): array
     {
         if (! $this->firebirdUuidConversionEnabled() || $wheres === [] || $this->firebirdWhereBindingsAreAmbiguous($wheres)) {
             return $bindings;
@@ -110,7 +130,12 @@ class FirebirdConnection extends Connection
 
             if (in_array($type, ['basic', 'like', 'bitwise', 'date', 'time', 'day', 'month', 'year', 'nullsafeequals'], true)) {
                 if (array_key_exists($index, $bindings)) {
-                    $prepared[] = $this->firebirdPrepareColumnValue($table, $where['column'] ?? null, $bindings[$index]);
+                    $prepared[] = $this->firebirdPrepareColumnValue(
+                        $table,
+                        $where['column'] ?? null,
+                        $bindings[$index],
+                        $joins
+                    );
                     $index++;
                 }
                 continue;
@@ -123,7 +148,12 @@ class FirebirdConnection extends Connection
                     }
 
                     if (array_key_exists($index, $bindings)) {
-                        $prepared[] = $this->firebirdPrepareColumnValue($table, $where['column'] ?? null, $bindings[$index]);
+                        $prepared[] = $this->firebirdPrepareColumnValue(
+                            $table,
+                            $where['column'] ?? null,
+                            $bindings[$index],
+                            $joins
+                        );
                         $index++;
                     }
                 }
@@ -133,7 +163,12 @@ class FirebirdConnection extends Connection
             if ($type === 'between') {
                 for ($i = 0; $i < 2; $i++) {
                     if (array_key_exists($index, $bindings)) {
-                        $prepared[] = $this->firebirdPrepareColumnValue($table, $where['column'] ?? null, $bindings[$index]);
+                        $prepared[] = $this->firebirdPrepareColumnValue(
+                            $table,
+                            $where['column'] ?? null,
+                            $bindings[$index],
+                            $joins
+                        );
                         $index++;
                     }
                 }
@@ -144,7 +179,12 @@ class FirebirdConnection extends Connection
                 $nestedBindings = array_slice($bindings, $index, count($where['query']->getRawBindings()['where'] ?? []));
                 array_push(
                     $prepared,
-                    ...$this->firebirdPrepareWhereBindings($table, $where['query']->wheres ?? [], $nestedBindings)
+                    ...$this->firebirdPrepareWhereBindings(
+                        $table,
+                        $where['query']->wheres ?? [],
+                        $nestedBindings,
+                        $joins
+                    )
                 );
                 $index += count($nestedBindings);
             }
@@ -187,9 +227,9 @@ class FirebirdConnection extends Connection
         return $this->firebirdBinaryUuidToString($value);
     }
 
-    public function firebirdColumnUsesBinaryUuid(mixed $table, mixed $column): bool
+    public function firebirdColumnUsesBinaryUuid(mixed $table, mixed $column, array $joins = []): bool
     {
-        $tableName = $this->firebirdTableNameForColumn($table, $column);
+        $tableName = $this->firebirdTableNameForColumn($table, $column, $joins);
         $columnName = $this->firebirdNormalizeColumnName($column);
 
         if ($tableName === null || $columnName === null) {
@@ -533,7 +573,7 @@ SQL);
         return strtolower($this->firebirdNormalizeIdentifier((string) end($parts)));
     }
 
-    private function firebirdTableNameForColumn(mixed $table, mixed $column): ?string
+    private function firebirdTableNameForColumn(mixed $table, mixed $column, array $joins = []): ?string
     {
         $tableName = $this->firebirdNormalizeTableName($table);
         $qualifier = $this->firebirdColumnQualifier($column);
@@ -544,6 +584,17 @@ SQL);
 
         if ($tableName !== null && in_array($qualifier, $this->firebirdTableQualifiers($table), true)) {
             return $tableName;
+        }
+
+        foreach ($joins as $join) {
+            $joinTable = is_object($join) ? ($join->table ?? null) : null;
+            $joinedTableName = $this->firebirdNormalizeTableName($joinTable);
+
+            if ($joinedTableName !== null
+                && in_array($qualifier, $this->firebirdTableQualifiers($joinTable), true)
+            ) {
+                return $joinedTableName;
+            }
         }
 
         return $qualifier;

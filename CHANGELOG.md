@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+### Fixed
+
+- Resolve joined-table aliases when converting canonical UUID string bindings for `BINARY(16)` columns.
+
 ## 0.2.1
 
 ### Fixed

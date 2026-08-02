@@ -542,6 +542,15 @@ class FirebirdIntegrationTest extends TestCase
 
         self::assertSame($childId, $joinedChild->ID ?? $joinedChild->id);
 
+        $joinedChildWithAliasedWhere = $connection->table('uuid_children')
+            ->join('uuid_playground as up', 'up.id', '=', 'uuid_children.parent_id')
+            ->select('uuid_children.*')
+            ->whereIn('up.text_uuid', [$textUuid])
+            ->where('up.id', $id)
+            ->first();
+
+        self::assertSame($childId, $joinedChildWithAliasedWhere->ID ?? $joinedChildWithAliasedWhere->id);
+
         $replacementParentId = '018f1f0b-4f8f-7a1a-8f74-69d2b8190c14';
 
         self::assertSame(1, $connection->table('uuid_playground')->where('text_uuid', $textUuid)->update([
