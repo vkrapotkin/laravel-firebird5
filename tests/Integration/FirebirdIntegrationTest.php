@@ -470,6 +470,53 @@ class FirebirdIntegrationTest extends TestCase
             'text_uuid' => $textUuid,
         ]);
 
+        $batchIds = [
+            '018f1f0b-4f8f-7a1a-8f74-69d2b8190c21',
+            '018f1f0b-4f8f-7a1a-8f74-69d2b8190c22',
+        ];
+        $connection->table('uuid_playground')->insert([
+            ['id' => $batchIds[0], 'parent_id' => $id, 'text_uuid' => $batchIds[0]],
+            ['id' => $batchIds[1], 'parent_id' => $id, 'text_uuid' => $batchIds[1]],
+        ]);
+
+        self::assertEqualsCanonicalizing(
+            $batchIds,
+            $connection->table('uuid_playground')->whereIn('id', $batchIds)->pluck('id')->all()
+        );
+
+        $rawBatchIds = [
+            '018f1f0b-4f8f-7a1a-8f74-69d2b8190c23',
+            '018f1f0b-4f8f-7a1a-8f74-69d2b8190c24',
+        ];
+        $preparedRows = $connection->firebirdPrepareInsertValues('uuid_playground', [
+            ['id' => $rawBatchIds[0], 'parent_id' => $id, 'text_uuid' => $rawBatchIds[0]],
+            ['id' => $rawBatchIds[1], 'parent_id' => $id, 'text_uuid' => $rawBatchIds[1]],
+        ]);
+
+        self::assertSame(16, strlen($preparedRows[0]['id']));
+        self::assertSame(16, strlen($preparedRows[0]['parent_id']));
+        self::assertSame($rawBatchIds[0], $preparedRows[0]['text_uuid']);
+
+        $connection->statement(
+            'execute block ('.
+            'p0_id type of column uuid_playground.id = ?, '.
+            'p0_parent_id type of column uuid_playground.parent_id = ?, '.
+            'p0_text_uuid type of column uuid_playground.text_uuid = ?, '.
+            'p1_id type of column uuid_playground.id = ?, '.
+            'p1_parent_id type of column uuid_playground.parent_id = ?, '.
+            'p1_text_uuid type of column uuid_playground.text_uuid = ?'.
+            ') as begin '.
+            'insert into uuid_playground (id, parent_id, text_uuid) values (:p0_id, :p0_parent_id, :p0_text_uuid); '.
+            'insert into uuid_playground (id, parent_id, text_uuid) values (:p1_id, :p1_parent_id, :p1_text_uuid); '.
+            'end',
+            array_merge(...array_map('array_values', $preparedRows))
+        );
+
+        self::assertEqualsCanonicalizing(
+            $rawBatchIds,
+            $connection->table('uuid_playground')->whereIn('id', $rawBatchIds)->pluck('id')->all()
+        );
+
         $stored = $connection->getPdo()
             ->query('select id, parent_id, text_uuid from uuid_playground')
             ->fetch(\PDO::FETCH_ASSOC);

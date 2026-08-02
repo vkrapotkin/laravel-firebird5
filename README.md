@@ -6,7 +6,7 @@ Independent Laravel package with a Firebird SQL 5 driver for Laravel 13.
 
 - `firebird` connection driver for Laravel 13 with package auto-discovery
 - PDO Firebird connector with DSN builder for local and host-based database paths
-- Query support for pagination, `insertGetId()`, `insertUsing()`, `DELETE ... ROWS`, single-row `upsert`, `union all`, `lockForUpdate()`, and `sharedLock()`
+- Query support for pagination, multi-row `insert()`, `insertGetId()`, `insertUsing()`, `DELETE ... ROWS`, single-row `upsert`, `union all`, `lockForUpdate()`, and `sharedLock()`
 - Schema support for create, alter, `change()`, `renameColumn()`, `dropColumn()`, indexes, unique constraints, foreign keys, views, and bulk dropping of tables/views
 - Schema introspection for tables, views, columns, indexes, foreign keys, and domains via `getTypes()`
 - Firebird-aware transaction handling for top-level Laravel transaction blocks
@@ -72,6 +72,27 @@ DB_DIALECT=3
 - The package targets Firebird SQL 5 syntax and PDO Firebird.
 - The package namespace is `Vkrapotkin\LaravelFirebird5`.
 - Query and schema behavior is covered by unit tests and real integration tests against a Firebird 5 database recreated on demand.
+
+## Binary UUID values in raw batch SQL
+
+The query builder compiles multi-row inserts as chunked Firebird
+`EXECUTE BLOCK` statements and converts canonical UUID strings automatically
+when column metadata identifies a binary UUID column. The same conversion is
+available for other custom batch statements through
+`FirebirdConnection::firebirdPrepareInsertValues()`:
+
+```php
+$rows = $connection->firebirdPrepareInsertValues('registrations', [
+    ['id' => $firstUuid, 'contest_id' => $contestUuid],
+    ['id' => $secondUuid, 'contest_id' => $contestUuid],
+]);
+```
+
+The method accepts one associative row or a list of rows and returns a
+normalized list ready to be flattened into bindings. Use it before executing
+manually assembled SQL such as `EXECUTE BLOCK`. Arbitrary raw SQL is not parsed
+automatically because positional placeholders do not reliably identify their
+target table columns.
 
 ## Known Limitations
 

@@ -112,6 +112,47 @@ class FirebirdGrammar extends Grammar
         return $conjunction.$union['query']->toSql();
     }
 
+    public function compileInsert(Builder $query, array $values): string
+    {
+        if ($values === [] || ! is_array(array_first($values)) || count($values) === 1) {
+            return parent::compileInsert($query, $values);
+        }
+
+        $table = $this->wrapTable($query->from);
+        $columns = array_keys(array_first($values));
+        $wrappedColumns = array_map(fn ($column) => $this->wrap($column), $columns);
+        $declarations = [];
+        $statements = [];
+
+        foreach ($values as $rowIndex => $row) {
+            $parameters = [];
+
+            foreach ($columns as $columnIndex => $column) {
+                $parameter = "p{$rowIndex}_{$columnIndex}";
+                $declarations[] = sprintf(
+                    '%s type of column %s.%s = ?',
+                    $parameter,
+                    $table,
+                    $wrappedColumns[$columnIndex]
+                );
+                $parameters[] = ':'.$parameter;
+            }
+
+            $statements[] = sprintf(
+                'insert into %s (%s) values (%s);',
+                $table,
+                implode(', ', $wrappedColumns),
+                implode(', ', $parameters)
+            );
+        }
+
+        return sprintf(
+            "execute block (\n%s\n) as begin\n%s\nend",
+            implode(",\n", $declarations),
+            implode("\n", $statements)
+        );
+    }
+
     public function compileInsertGetId(Builder $query, $values, $sequence): string
     {
         $sql = $this->compileInsert($query, $values);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4
+
+### Added
+
+- Compile query-builder multi-row inserts as chunked Firebird `EXECUTE BLOCK`
+  statements.
+- Add `FirebirdConnection::firebirdPrepareInsertValues()` for metadata-aware
+  preparation of binary UUID bindings in custom batch SQL.
+
 ## 0.2.3
 
 ### Fixed

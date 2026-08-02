@@ -17,6 +17,8 @@ use function Illuminate\Support\enum_value;
 
 class FirebirdBuilder extends Builder
 {
+    private const INSERT_BLOCK_MAX_PARAMETERS = 1500;
+
     public function getBindings(): array
     {
         if (! $this->connection instanceof FirebirdConnection) {
@@ -41,10 +43,19 @@ class FirebirdBuilder extends Builder
 
         $this->applyBeforeQueryCallbacks();
 
-        return $this->connection->insert(
-            $this->grammar->compileInsert($this, $values),
-            $this->cleanBindings(Arr::flatten($values, 1))
-        );
+        $columnCount = max(1, count(array_first($values)));
+        $blockSize = max(1, intdiv(self::INSERT_BLOCK_MAX_PARAMETERS, $columnCount));
+
+        foreach (array_chunk($values, $blockSize) as $chunk) {
+            if (! $this->connection->insert(
+                $this->grammar->compileInsert($this, $chunk),
+                $this->cleanBindings(Arr::flatten($chunk, 1))
+            )) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function insertGetId(array $values, $sequence = null)
@@ -153,6 +164,10 @@ class FirebirdBuilder extends Builder
 
     private function firebirdPrepareInsertValues(array $values): array
     {
+        if ($this->connection instanceof FirebirdConnection) {
+            return $this->connection->firebirdPrepareInsertValues($this->from, $values);
+        }
+
         if (! is_array(array_first($values))) {
             return [$this->firebirdPrepareColumnValues($values)];
         }

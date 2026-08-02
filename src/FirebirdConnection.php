@@ -89,6 +89,33 @@ class FirebirdConnection extends Connection
         return hex2bin(str_replace('-', '', $value));
     }
 
+    /**
+     * Prepare one associative row or a list of rows for INSERT bindings.
+     *
+     * Raw SQL, including EXECUTE BLOCK, does not contain enough reliable
+     * information to associate every positional binding with a table column.
+     * Call this method before flattening bindings for such statements.
+     *
+     * @return list<array<array-key, mixed>>
+     */
+    public function firebirdPrepareInsertValues(mixed $table, array $values): array
+    {
+        if ($values === []) {
+            return [];
+        }
+
+        if (! is_array(array_first($values))) {
+            return [$this->firebirdPrepareColumnValues($table, $values)];
+        }
+
+        foreach ($values as $key => $value) {
+            ksort($value);
+            $values[$key] = $this->firebirdPrepareColumnValues($table, $value);
+        }
+
+        return $values;
+    }
+
     public function firebirdPrepareQueryBindings(
         mixed $table,
         array $bindings,
@@ -225,6 +252,15 @@ class FirebirdConnection extends Connection
         }
 
         return $this->firebirdBinaryUuidToString($value);
+    }
+
+    private function firebirdPrepareColumnValues(mixed $table, array $values): array
+    {
+        foreach ($values as $column => $value) {
+            $values[$column] = $this->firebirdPrepareColumnValue($table, $column, $value);
+        }
+
+        return $values;
     }
 
     public function firebirdColumnUsesBinaryUuid(mixed $table, mixed $column, array $joins = []): bool
