@@ -104,6 +104,27 @@ class FirebirdIntegrationTest extends TestCase
         self::assertFalse(Schema::connection('firebird')->hasTable('widgets'));
     }
 
+    public function test_it_preserves_integer_binding_for_scaled_numeric_column(): void
+    {
+        $connection = DB::connection('firebird');
+        $connection->statement('create table scaled_numeric_playground (id integer not null primary key, quantity numeric(18, 3) not null)');
+
+        $connection->table('scaled_numeric_playground')->insert([
+            'id' => 1,
+            'quantity' => 1,
+        ]);
+        $connection->table('scaled_numeric_playground')->insert([
+            'id' => 2,
+            'quantity' => 1.0,
+        ]);
+        $connection->table('scaled_numeric_playground')->insert([
+            'id' => 3,
+            'quantity' => '1.000',
+        ]);
+
+        self::assertSame(['1.000', '1.000', '1.000'], $connection->table('scaled_numeric_playground')->orderBy('id')->pluck('quantity')->all());
+    }
+
     public function test_it_reads_schema_metadata_and_drops_views_and_tables(): void
     {
         $this->migrateBase();

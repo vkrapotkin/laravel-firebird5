@@ -27,6 +27,9 @@ class FirebirdConnection extends Connection
     /** @var array<string, array<string, string>> */
     private array $columnStorageCache = [];
 
+    /** @var array<string, array<string, bool>> */
+    private array $scaledNumericColumnCache = [];
+
     /** @var array<string, list<int>> */
     private array $procedureBinaryUuidParameterCache = [];
 
@@ -78,15 +81,21 @@ class FirebirdConnection extends Connection
         array $joins = []
     ): mixed
     {
-        if (! $this->firebirdUuidConversionEnabled()
-            || ! is_string($value)
-            || ! preg_match(self::UUID_PATTERN, $value)
-            || ! $this->firebirdColumnUsesBinaryUuid($table, $column, $joins)
-        ) {
-            return $value;
+        if (is_int($value) && $this->firebirdColumnUsesScaledNumeric($table, $column, $joins)) {
+            // PDO_Firebird binds PHP ints as an unscaled integer, even when the
+            // target NUMERIC/DECIMAL column has a scale. Bind text instead.
+            return sprintf('%d.0', $value);
         }
 
-        return hex2bin(str_replace('-', '', $value));
+        if ($this->firebirdUuidConversionEnabled()
+            && is_string($value)
+            && preg_match(self::UUID_PATTERN, $value)
+            && $this->firebirdColumnUsesBinaryUuid($table, $column, $joins)
+        ) {
+            return hex2bin(str_replace('-', '', $value));
+        }
+
+        return $value;
     }
 
     /**
@@ -273,6 +282,18 @@ class FirebirdConnection extends Connection
         }
 
         return ($this->firebirdColumnStorage($tableName)[$columnName] ?? null) === 'binary_uuid';
+    }
+
+    public function firebirdColumnUsesScaledNumeric(mixed $table, mixed $column, array $joins = []): bool
+    {
+        $tableName = $this->firebirdTableNameForColumn($table, $column, $joins);
+        $columnName = $this->firebirdNormalizeColumnName($column);
+
+        if ($tableName === null || $columnName === null) {
+            return false;
+        }
+
+        return $this->firebirdScaledNumericColumns($tableName)[$columnName] ?? false;
     }
 
     protected function run($query, $bindings, Closure $callback)
@@ -512,6 +533,48 @@ SQL);
         }
 
         return $this->columnStorageCache[$metadataName] = $columns;
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function firebirdScaledNumericColumns(string $table): array
+    {
+        $metadataName = $this->firebirdMetadataIdentifier($table);
+
+        if (array_key_exists($metadataName, $this->scaledNumericColumnCache)) {
+            return $this->scaledNumericColumnCache[$metadataName];
+        }
+
+        if ($this->getPdo() === null) {
+            return $this->scaledNumericColumnCache[$metadataName] = [];
+        }
+
+        $statement = $this->getPdo()->prepare(<<<'SQL'
+select
+    trim(rf.rdb$field_name) as column_name,
+    f.rdb$field_type as field_type,
+    f.rdb$field_sub_type as field_sub_type,
+    f.rdb$field_scale as field_scale
+from rdb$relation_fields rf
+join rdb$fields f on f.rdb$field_name = rf.rdb$field_source
+where rf.rdb$relation_name = ?
+SQL);
+        $statement->bindValue(1, $metadataName, PDO::PARAM_STR);
+        $statement->execute();
+
+        $columns = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $column = strtolower(trim((string) $this->firebirdRowValue($row, 'column_name', '')));
+            $fieldType = (int) $this->firebirdRowValue($row, 'field_type', 0);
+            $fieldSubtype = (int) $this->firebirdRowValue($row, 'field_sub_type', 0);
+            $fieldScale = (int) $this->firebirdRowValue($row, 'field_scale', 0);
+            $columns[$column] = in_array($fieldType, [7, 8, 16], true)
+                && in_array($fieldSubtype, [1, 2], true)
+                && $fieldScale < 0;
+        }
+
+        return $this->scaledNumericColumnCache[$metadataName] = $columns;
     }
 
     /**
